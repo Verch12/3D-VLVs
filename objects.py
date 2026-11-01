@@ -66,7 +66,7 @@ class Mesh:
     def __init__(self, vertices, indices, draw_mode):
         """vertices: плоский список [x, y, z, r, g, b, a, ...]; indices: номера вершин."""
         self.vertices = np.array(vertices, dtype=np.float32)
-        indices = np.array(indices, dtype=np.uint32)
+        self.indices = np.array(indices, dtype=np.uint32)
         self.index_count = len(indices)
         self.draw_mode = draw_mode
 
@@ -79,7 +79,7 @@ class Mesh:
 
         self.ebo = glGenBuffers(1)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo)
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, self.indices.nbytes, self.indices, GL_STATIC_DRAW)
 
         stride = 7 * self.vertices.itemsize
         glEnableVertexAttribArray(0)
@@ -142,16 +142,10 @@ class BatchedLines:
         stride = 7 * vertices.itemsize
 
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(
-            0, 3, GL_FLOAT, GL_FALSE, stride,
-            ctypes.c_void_p(0)
-        )
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(0))
 
         glEnableVertexAttribArray(1)
-        glVertexAttribPointer(
-            1, 4, GL_FLOAT, GL_FALSE, stride,
-            ctypes.c_void_p(3 * vertices.itemsize)
-        )
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(3 * vertices.itemsize))
 
         glBindVertexArray(0)
 
@@ -162,6 +156,84 @@ class BatchedLines:
     def delete(self):
         glDeleteBuffers(1, [self.vbo])
         glDeleteVertexArrays(1, [self.vao])
+
+# ---------------------------------------------------------------------------
+# Пакетные Меши: геометрия, дублькаты, загруженная в видеопамять (создаётся один раз на форму)
+# ---------------------------------------------------------------------------
+FLOATS_PER_VERTEX = 7
+
+class Batch:
+    def __init__(self, objects, mode, lit):
+        self.mode = mode
+        self.lit = lit
+ 
+        all_vertices = []
+        all_indices = []
+        offset = 0
+ 
+        for obj in objects:
+            v = np.array(obj.mesh.vertices, dtype=np.float32).reshape(-1, FLOATS_PER_VERTEX)
+            i = np.array(obj.mesh.indices, dtype=np.uint32)
+
+            model = obj.model_matrix()
+            xyz1 = np.hstack([v[:, :3], np.ones((len(v), 1), dtype=np.float32)])
+            v[:, :3] = (xyz1 @ model.T)[:, :3]
+ 
+            # Цвет объекта запекаем в вершины
+            if getattr(obj, "new_color", None):
+                v[:, 3:7] = obj.new_color
+ 
+            all_vertices.append(v)
+            all_indices.append(i + offset)
+            offset += len(v)
+ 
+        vertices = np.concatenate(all_vertices, axis=0)
+        indices = np.concatenate(all_indices, axis=0).astype(np.uint32)
+        self.index_count = len(indices)
+ 
+        self.vao = glGenVertexArrays(1)
+        glBindVertexArray(self.vao)
+ 
+        self.vbo = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
+        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
+ 
+        self.ebo = glGenBuffers(1)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
+ 
+        item = vertices.itemsize
+        stride = FLOATS_PER_VERTEX * item
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(1)
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(3 * item))
+        glBindVertexArray(0)
+ 
+    def draw(self):
+        glBindVertexArray(self.vao)
+        glDrawElements(self.mode, self.index_count, GL_UNSIGNED_INT, None)
+ 
+    def delete(self):
+        glDeleteBuffers(2, [self.vbo, self.ebo])
+        glDeleteVertexArrays(1, [self.vao])
+ 
+ 
+class AllMesh:
+    def __init__(self, objects):
+        groups = {}
+        for obj in objects:
+            key = (obj.mesh.draw_mode, bool(getattr(obj, "lit", True)))
+            groups.setdefault(key, []).append(obj)
+        self.batches = [Batch(objs, mode, lit) for (mode, lit), objs in groups.items()]
+ 
+    def draw(self):
+        for batch in self.batches:
+            batch.draw()
+ 
+    def delete(self):
+        for batch in self.batches:
+            batch.delete()
 
 # ---------------------------------------------------------------------------
 # Объект сцены: меш + положение, размер и вращение

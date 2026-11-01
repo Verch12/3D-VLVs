@@ -159,6 +159,11 @@ def main():
     for i in obstacle_cells: add_cube(i, (0.5, 0.5, 0.5, 1))
     for i in bfs(start_pos, end_pos, obstacle_cells, GRID_SIZE): add_cube(i, (0.08, 0.86, 0.61, 0.2))
 
+    def visible_objects():
+        return [o for o in objects
+                if getattr(o, "name", None) != "light" or LIGHT_VISIBLE]
+
+    all_mesh = AllMesh(visible_objects())
     while running:
         dt = clock.tick(60) / 1000.0
 
@@ -172,6 +177,8 @@ def main():
                     camera.reset()
                 elif event.key == K_l:
                     LIGHT_VISIBLE = not LIGHT_VISIBLE
+                    all_mesh.delete()
+                    all_mesh = AllMesh(visible_objects())
                 elif event.key == K_g:
                     GRID_VISIBLE = not GRID_VISIBLE
             elif event.type == VIDEORESIZE:
@@ -199,36 +206,30 @@ def main():
         glUniform3f(view_pos_location, *eye)
         glUniform4f(ocr_location, 1.0, 1.0, 1.0, 1.0)
 
-        for obj in objects:
-            if getattr(obj, "name", None) == "light" and not LIGHT_VISIBLE:
-                continue
-
-            model = obj.model_matrix()
-            mvp = proj_view @ model
-            if obj.new_color:
-                new_c = np.array(obj.new_color, dtype=np.float32)
-                glUniform1i(has_new_c_location, GL_TRUE)
-                glUniform4fv(new_c_location, 1, new_c)
-            else:
-                glUniform1i(has_new_c_location, GL_FALSE)
-            glUniform1i(use_light_location, getattr(obj, "lit", True))
-            glUniformMatrix4fv(model_location, 1, GL_TRUE, model)
-            glUniformMatrix4fv(mvp_location, 1, GL_TRUE, mvp)
-            obj.mesh.draw()
-
+        identity = np.identity(4, dtype=np.float32)
+        
         if GRID_VISIBLE:
             glUniform1i(use_light_location, GL_FALSE)
             glUniform1i(has_new_c_location, GL_FALSE)
-            glUniformMatrix4fv(model_location, 1, GL_TRUE, np.identity(4, dtype=np.float32))
+            glUniformMatrix4fv(model_location, 1, GL_TRUE, identity)
             glUniformMatrix4fv(mvp_location, 1, GL_TRUE, proj_view)
             glUniform4fv(ocr_location, 1, np.array([0.5, 0.5, 0.5, 0.2], dtype=np.float32))
             net_batch.draw()
 
-        pygame.display.flip()
+        glUniform1i(has_new_c_location, GL_FALSE)
+        glUniform4f(ocr_location, 1.0, 1.0, 1.0, 1.0)
+        glUniformMatrix4fv(model_location, 1, GL_TRUE, identity)
+        glUniformMatrix4fv(mvp_location, 1, GL_TRUE, proj_view)
+        for batch in all_mesh.batches:
+            glUniform1i(use_light_location, batch.lit)
+            batch.draw()
 
+        pygame.display.flip()
+        
         fps = clock.get_fps()
         pygame.display.set_caption(f"FPS: {fps:.1f}")
 
+    all_mesh.delete()
     for resource in [*meshes, net_batch]:
         resource.delete()
     glDeleteProgram(program)
