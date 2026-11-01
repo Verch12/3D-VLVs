@@ -11,7 +11,7 @@ from pygame.locals import (DOUBLEBUF, OPENGL, RESIZABLE, QUIT, KEYDOWN, K_ESCAPE
 from figures import *
 from objects import *
 from BFS import *
-
+from labyrinth import start_pos, end_pos, obstacle_cells
 
 VERTEX_SHADER = """
 #version 330 core
@@ -114,9 +114,9 @@ def main():
     axis = make_axis()
     meshes = [cube, pyramid, floor, line, axis]
 
-    GRID_SIZE = 6
-    LIGHT_INTENSITY = 1
-    LIGHT_POS = (0.0, 5.0, 5.0)
+    GRID_SIZE = 20
+    LIGHT_INTENSITY = 2
+    LIGHT_POS = (10.0, 25.0, 10.0)
     LIGHT_COLOR = (1.0, 1.0, 1.0)
     LIGHT_VISIBLE = False
     GRID_VISIBLE = False
@@ -144,13 +144,13 @@ def main():
     clock = pygame.time.Clock()
     running = True
 
-    start_pos = (0, 0, 0)
+    """start_pos = (0, 0, 0)
     end_pos = (5, 0, 5)
     obstacle_cells = [
         (2, 0, 0), (2, 0, 1), (2, 1, 0), (2, 1, 1),
         (2, 2, 0), (2, 2, 1), (2, 2, 2), (2, 2, 3), (2, 2, 4),
         (3, 2, 2), (3, 3, 2), (1, 2, 2), (4, 2, 2),
-    ]
+    ]"""
     def add_cube(pos, color):
         objects.append(SceneObject(cube, position=pos,size=(0.5, 0.5, 0.5), new_color=color))
 
