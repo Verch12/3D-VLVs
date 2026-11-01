@@ -6,10 +6,11 @@ import pygame
 from OpenGL.GL import *
 from OpenGL.GL import shaders
 from pygame.locals import (DOUBLEBUF, OPENGL, RESIZABLE, QUIT, KEYDOWN, K_ESCAPE,
-                           K_r, VIDEORESIZE, MOUSEMOTION,
+                           K_r, K_l, K_g, VIDEORESIZE, MOUSEMOTION,
                            MOUSEWHEEL)
 from figures import *
 from objects import *
+from BFS import *
 
 
 VERTEX_SHADER = """
@@ -35,6 +36,7 @@ uniform vec4 new_color;
 
 // НОВОЕ: параметры освещения
 uniform bool use_lighting;   // false для линий, осей и лампочки
+uniform float light_intensity;
 uniform vec3 light_pos;      // неподвижная точка света (в мировых координатах)
 uniform vec3 light_color;
 uniform vec3 view_pos;       // позиция камеры (для бликов)
@@ -66,7 +68,7 @@ void main() {
     float spec = (diff > 0.0) ? pow(max(dot(n, h), 0.0), 32.0) * 0.4 : 0.0;  // блик
     float att = 1.0 / (1.0 + 0.045 * dist + 0.0075 * dist * dist);           // затухание
 
-    vec3 rgb = (ambient + diff * att) * base.rgb * light_color*2 + spec * att * light_color*2;
+    vec3 rgb = (ambient + diff * att) * base.rgb * light_color*light_intensity + spec * att * light_color*light_intensity;
     frag_color = vec4(rgb, base.a);
 }
 """
@@ -95,6 +97,7 @@ def main():
     new_c_location = glGetUniformLocation(program, "new_color")
 
     use_light_location = glGetUniformLocation(program, "use_lighting")
+    light_intensity_location = glGetUniformLocation(program, "light_intensity")
     light_pos_location = glGetUniformLocation(program, "light_pos")
     light_color_location = glGetUniformLocation(program, "light_color")
     view_pos_location = glGetUniformLocation(program, "view_pos")
@@ -111,19 +114,28 @@ def main():
     axis = make_axis()
     meshes = [cube, pyramid, floor, line, axis]
 
-    LIGHT_POS = (3.0, 4.0, 2.0)
+    GRID_SIZE = 6
+    LIGHT_INTENSITY = 1
+    LIGHT_POS = (0.0, 5.0, 5.0)
     LIGHT_COLOR = (1.0, 1.0, 1.0)
+    LIGHT_VISIBLE = False
+    GRID_VISIBLE = False
 
     axis_obj = SceneObject(axis)
     axis_obj.lit = False
 
+    light_obj = SceneObject(cube, position=LIGHT_POS, new_color=(*LIGHT_COLOR, 1), size=(0.5, 0.5, 0.5))
+    light_obj.lit = False
+    light_obj.name = "light"
+
     objects = [
         axis_obj,
-        SceneObject(cube, position=(0, 0, 0),size=(0.5, 0.5, 0.5), new_color=(0.08, 0.86, 0.61, 0.2)),
+        light_obj,
+        #SceneObject(cube, position=(0, 0, 0),size=(0.5, 0.5, 0.5), new_color=(0.08, 0.86, 0.61, 0.2)),
     ]
 
 
-    net_batch = BatchedLines(line, 20)
+    net_batch = BatchedLines(line, GRID_SIZE+1)
     #objects[1].angle_y = np.radians(90)
     #objects[1].size = (2, 1, 1)
     #objects[1].position = (0, 2, 1)
@@ -131,6 +143,21 @@ def main():
     camera = OrbitCamera()
     clock = pygame.time.Clock()
     running = True
+
+    start_pos = (0, 0, 0)
+    end_pos = (5, 0, 5)
+    obstacle_cells = [
+        (2, 0, 0), (2, 0, 1), (2, 1, 0), (2, 1, 1),
+        (2, 2, 0), (2, 2, 1), (2, 2, 2), (2, 2, 3), (2, 2, 4),
+        (3, 2, 2), (3, 3, 2), (1, 2, 2), (4, 2, 2),
+    ]
+    def add_cube(pos, color):
+        objects.append(SceneObject(cube, position=pos,size=(0.5, 0.5, 0.5), new_color=color))
+
+    objects.append(SceneObject(cube, position=start_pos,size=(0.5, 0.5, 0.5), new_color=(0, 0.7, 0, 1)))
+    objects.append(SceneObject(cube, position=end_pos,size=(0.5, 0.5, 0.5), new_color=(0.7, 0, 0, 1)))
+    for i in obstacle_cells: add_cube(i, (0.5, 0.5, 0.5, 1))
+    for i in bfs(start_pos, end_pos, obstacle_cells, GRID_SIZE): add_cube(i, (0.08, 0.86, 0.61, 0.2))
 
     while running:
         dt = clock.tick(60) / 1000.0
@@ -143,6 +170,10 @@ def main():
                     running = False
                 elif event.key == K_r:
                     camera.reset()
+                elif event.key == K_l:
+                    LIGHT_VISIBLE = not LIGHT_VISIBLE
+                elif event.key == K_g:
+                    GRID_VISIBLE = not GRID_VISIBLE
             elif event.type == VIDEORESIZE:
                 width, height = max(event.w, 1), max(event.h, 1)
                 glViewport(0, 0, width, height)
@@ -162,12 +193,16 @@ def main():
         glUseProgram(program)
 
         # Параметры света одинаковы для всего кадра
+        glUniform1f(light_intensity_location, LIGHT_INTENSITY)
         glUniform3f(light_pos_location, *LIGHT_POS)
         glUniform3f(light_color_location, *LIGHT_COLOR)
         glUniform3f(view_pos_location, *eye)
         glUniform4f(ocr_location, 1.0, 1.0, 1.0, 1.0)
 
         for obj in objects:
+            if getattr(obj, "name", None) == "light" and not LIGHT_VISIBLE:
+                continue
+
             model = obj.model_matrix()
             mvp = proj_view @ model
             if obj.new_color:
@@ -181,12 +216,13 @@ def main():
             glUniformMatrix4fv(mvp_location, 1, GL_TRUE, mvp)
             obj.mesh.draw()
 
-        glUniform1i(use_light_location, GL_FALSE)
-        glUniform1i(has_new_c_location, GL_FALSE)
-        glUniformMatrix4fv(model_location, 1, GL_TRUE, np.identity(4, dtype=np.float32))
-        glUniformMatrix4fv(mvp_location, 1, GL_TRUE, proj_view)
-        glUniform4fv(ocr_location, 1, np.array([0.5, 0.5, 0.5, 0.2], dtype=np.float32))
-        net_batch.draw()
+        if GRID_VISIBLE:
+            glUniform1i(use_light_location, GL_FALSE)
+            glUniform1i(has_new_c_location, GL_FALSE)
+            glUniformMatrix4fv(model_location, 1, GL_TRUE, np.identity(4, dtype=np.float32))
+            glUniformMatrix4fv(mvp_location, 1, GL_TRUE, proj_view)
+            glUniform4fv(ocr_location, 1, np.array([0.5, 0.5, 0.5, 0.2], dtype=np.float32))
+            net_batch.draw()
 
         pygame.display.flip()
 

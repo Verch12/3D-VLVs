@@ -7,7 +7,7 @@ from matrices import *
 # ---------------------------------------------------------------------------
 
 class OrbitCamera:
-    MIN_DIST, MAX_DIST = 2.5, 40.0
+    MIN_DIST, MAX_DIST = 2.5, 100.0
     MAX_PITCH = np.radians(89.0)
 
     def __init__(self):
@@ -28,7 +28,7 @@ class OrbitCamera:
         self.pitch = float(np.clip(self.pitch, -self.MAX_PITCH, self.MAX_PITCH))
 
     def translate(self, dx, dy):
-        self.setX += dx * self.sensitivity
+        self.setX -= dx * self.sensitivity
         self.setY += dy * self.sensitivity
 
     def zoom(self, amount):
@@ -124,7 +124,7 @@ class BatchedLines:
                 moved[:, 0:3] *= np.full(3, scaled-1, dtype=np.float32)
                 moved[:, 0:3] += offset
                 moved[:, 0:3] = np.roll(moved[:, 0:3], shift=rot, axis=1)
-                moved[:, 0:3] -= np.full(3, scaled/2+0.5, dtype=np.float32)
+                moved[:, 0:3] -= np.full(3, 0.5, dtype=np.float32)
                 all_vertices.append(moved)
 
         vertices = np.concatenate(all_vertices, axis=0)
