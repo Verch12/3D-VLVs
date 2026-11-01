@@ -11,7 +11,7 @@ from pygame.locals import (DOUBLEBUF, OPENGL, RESIZABLE, QUIT, KEYDOWN, K_ESCAPE
 from figures import *
 from objects import *
 from BFS import *
-from labyrinth import start_pos, end_pos, obstacle_cells
+from labyrinth import generate_maze_3d
 
 VERTEX_SHADER = """
 #version 330 core
@@ -114,9 +114,9 @@ def main():
     axis = make_axis()
     meshes = [cube, pyramid, floor, line, axis]
 
-    GRID_SIZE = 20
-    LIGHT_INTENSITY = 2
-    LIGHT_POS = (10.0, 25.0, 10.0)
+    GRID_SIZE = 50
+    LIGHT_INTENSITY = 3
+    LIGHT_POS = (25.0, 25.0, 25.0)
     LIGHT_COLOR = (1.0, 1.0, 1.0)
     LIGHT_VISIBLE = False
     GRID_VISIBLE = False
@@ -139,20 +139,19 @@ def main():
     clock = pygame.time.Clock()
     running = True
 
-    """start_pos = (0, 0, 0)
-    end_pos = (5, 0, 5)
-    obstacle_cells = [
-        (2, 0, 0), (2, 0, 1), (2, 1, 0), (2, 1, 1),
-        (2, 2, 0), (2, 2, 1), (2, 2, 2), (2, 2, 3), (2, 2, 4),
-        (3, 2, 2), (3, 3, 2), (1, 2, 2), (4, 2, 2),
-    ]"""
     def add_cube(pos, color):
         objects.append(SceneObject(cube, position=pos,size=(0.5, 0.5, 0.5), new_color=color))
+
+    start_pos, end_pos, obstacle_cells = generate_maze_3d(GRID_SIZE)
 
     objects.append(SceneObject(cube, position=start_pos,size=(0.5, 0.5, 0.5), new_color=(0, 0.7, 0, 1)))
     objects.append(SceneObject(cube, position=end_pos,size=(0.5, 0.5, 0.5), new_color=(0.7, 0, 0, 1)))
     for i in obstacle_cells: add_cube(i, (0.5, 0.5, 0.5, 1))
-    for i in bfs(start_pos, end_pos, obstacle_cells, GRID_SIZE): add_cube(i, (0.08, 0.86, 0.61, 0.2))
+    path = bfs(start_pos, end_pos, obstacle_cells, GRID_SIZE)
+    if path is not None:
+        for i in path:
+            add_cube(i, (0.08, 0.86, 0.61, 0.2))
+    else: print("Путь не найден!")
 
     def visible_objects():
         return [o for o in objects
