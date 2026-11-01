@@ -27,12 +27,17 @@ void main() {
 
 FRAGMENT_SHADER = """
 #version 330 core
+uniform bool has_new_color;
+uniform vec4 new_color;
+
 in vec4 v_color;
 out vec4 frag_color;
 void main() {
-    frag_color = v_color;
-
-}
+    if (has_new_color)
+        frag_color = new_color;
+    else
+        frag_color = v_color;
+    }
 """
 
 
@@ -60,12 +65,14 @@ def main():
     mvp_location = glGetUniformLocation(program, "mvp")
     ocr_location = glGetUniformLocation(program, "ocr")
 
+    has_new_c_location = glGetUniformLocation(program, "has_new_color")
+    new_c_location = glGetUniformLocation(program, "new_color")
+
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glClearColor(0.08, 0.08, 0.12, 1.0)
 
-    # Каждая форма создаётся ОДИН раз ...
     cube = make_cube()
     pyramid = make_pyramid()
     floor = make_floor()
@@ -73,33 +80,16 @@ def main():
     axis = make_axis()
     meshes = [cube, pyramid, floor, line, axis]
 
-    # ... а объектов с этими формами может быть сколько угодно
     objects = [
         SceneObject(axis),
-        SceneObject(floor, position=(0, -1.5, 0), size=(8, 1, 8)),
-        SceneObject(cube, position=(-2.5, 0, 0), spin=(0.6, 1.0)),
-        SceneObject(pyramid, position=(2.5, 0, 0), spin=(0.0, -1.2)),
+        SceneObject(cube, position=(0, 0, 0),size=(0.5, 0.5, 0.5), new_color=(0.08, 0.56, 0.61, 1)),
     ]
 
+
     net_batch = BatchedLines(line, 20)
-
-
     #objects[1].angle_y = np.radians(90)
     #objects[1].size = (2, 1, 1)
     #objects[1].position = (0, 2, 1)
-
-    BASE_COUNT = len(objects)   # базовые объекты Backspace не удаляет
-
-    def add_random_object():
-        mesh = random.choice([cube, pyramid])
-        s = random.uniform(0.3, 0.8)
-        objects.append(SceneObject(
-            mesh,
-            position=(random.uniform(-6, 6), random.uniform(-1.0, 2.5),
-                      random.uniform(-6, 6)),
-            size=(s, s, s),
-            spin=(random.uniform(-2, 2), random.uniform(-2, 2)),
-        ))
 
     camera = OrbitCamera()
     clock = pygame.time.Clock()
@@ -116,10 +106,6 @@ def main():
                     running = False
                 elif event.key == K_r:
                     camera.reset()
-                elif event.key == K_SPACE:
-                    add_random_object()
-                elif event.key == K_BACKSPACE and len(objects) > BASE_COUNT:
-                    objects.pop()
             elif event.type == VIDEORESIZE:
                 width, height = max(event.w, 1), max(event.h, 1)
                 glViewport(0, 0, width, height)
@@ -130,9 +116,6 @@ def main():
             elif event.type == MOUSEWHEEL:
                 camera.zoom(event.y)
 
-        for obj in objects:
-            obj.update(dt)
-
         proj = perspective(45.0, width / height, 0.1, 100.0)
         proj_view = proj @ camera.view_matrix()   # общая часть считается один раз за кадр
 
@@ -140,11 +123,17 @@ def main():
         glUseProgram(program)
         for obj in objects:
             mvp = proj_view @ obj.model_matrix()
-            orc = np.array([1, 1, 1, 1], dtype=np.float32)
+            if obj.new_color:
+                new_c = np.array(obj.new_color, dtype=np.float32)
+                glUniform1i(has_new_c_location, GL_TRUE)
+                glUniform4fv(new_c_location, 1, new_c)
+            else:
+                glUniform1i(has_new_c_location, GL_FALSE)
             glUniformMatrix4fv(mvp_location, 1, GL_TRUE, mvp)
-            glUniform4fv(ocr_location, 1, orc)
+            #glUniform4fv(ocr_location, 1, ocr)
             obj.mesh.draw()
 
+        glUniform1i(has_new_c_location, GL_FALSE)
         glUniformMatrix4fv(mvp_location, 1, GL_TRUE, proj_view)
         glUniform4fv(ocr_location, 1, np.array([0.5, 0.5, 0.5, 0.2], dtype=np.float32))
         net_batch.draw()

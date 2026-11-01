@@ -124,7 +124,7 @@ class BatchedLines:
                 moved[:, 0:3] *= np.full(3, scaled-1, dtype=np.float32)
                 moved[:, 0:3] += offset
                 moved[:, 0:3] = np.roll(moved[:, 0:3], shift=rot, axis=1)
-                moved[:, 0:3] -= np.full(3, scaled/2, dtype=np.float32)
+                moved[:, 0:3] -= np.full(3, scaled/2+0.5, dtype=np.float32)
                 all_vertices.append(moved)
 
         vertices = np.concatenate(all_vertices, axis=0)
@@ -168,9 +168,10 @@ class BatchedLines:
 # ---------------------------------------------------------------------------
 
 class SceneObject:
-    def __init__(self, mesh, position=(0, 0, 0), size=(1, 1, 1), spin=(0.0, 0.0)):
+    def __init__(self, mesh, position=(0, 0, 0), size=(1, 1, 1), spin=(0.0, 0.0), new_color=()):
         self.mesh = mesh
         self.position = position
+        self.new_color = new_color
         self.size = size
         self.spin_x, self.spin_y = spin     # скорости вращения, рад/с
         self.angle_x = 0.0
