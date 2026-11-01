@@ -131,15 +131,10 @@ def main():
     objects = [
         axis_obj,
         light_obj,
-        #SceneObject(cube, position=(0, 0, 0),size=(0.5, 0.5, 0.5), new_color=(0.08, 0.86, 0.61, 0.2)),
     ]
 
 
     net_batch = BatchedLines(line, GRID_SIZE+1)
-    #objects[1].angle_y = np.radians(90)
-    #objects[1].size = (2, 1, 1)
-    #objects[1].position = (0, 2, 1)
-
     camera = OrbitCamera()
     clock = pygame.time.Clock()
     running = True

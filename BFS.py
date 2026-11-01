@@ -16,7 +16,7 @@ def bfs(start, end, obstacles, grid_size=GRID_SIZE):
                 path.append(current)
                 current = parent[current]
             path.reverse()
-            return path
+            return path[1:-1]
 
         cx, cy, cz = current
         for dx, dy, dz in DIRECTIONS:

@@ -11,53 +11,62 @@ class OrbitCamera:
     MAX_PITCH = np.radians(89.0)
 
     def __init__(self):
-        self.target = np.zeros(3, dtype=np.float32)
         self.sensitivity = 0.005
+        self.target = np.zeros(3, dtype=np.float32)
         self.reset()
 
     def reset(self):
         self.yaw = 0.6
         self.pitch = 0.4
         self.distance = 12.0
-        self.setX = 0
-        self.setY = 0
+        self.target[:] = 0.0
 
     def rotate(self, dx, dy):
         self.yaw -= dx * self.sensitivity
         self.pitch += dy * self.sensitivity
-        self.pitch = float(np.clip(self.pitch, -self.MAX_PITCH, self.MAX_PITCH))
+        self.pitch = float(
+            np.clip(self.pitch, -self.MAX_PITCH, self.MAX_PITCH)
+        )
 
-    def translate(self, dx, dy):
-        self.setX -= dx * self.sensitivity
-        self.setY += dy * self.sensitivity
-
-    def zoom(self, amount):
-        self.distance *= 0.9 ** amount
-        self.distance = float(np.clip(self.distance, self.MIN_DIST, self.MAX_DIST))
-
-    def view_matrix(self):
-        offset = self.distance * np.array([
+    def _offset(self):
+        return self.distance * np.array([
             np.cos(self.pitch) * np.sin(self.yaw),
             np.sin(self.pitch),
             np.cos(self.pitch) * np.cos(self.yaw),
         ], dtype=np.float32)
 
+    def translate(self, dx, dy):
+        offset = self._offset()
         forward = -offset / np.linalg.norm(offset)
+
         world_up = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+
         right = np.cross(forward, world_up)
-        if np.linalg.norm(right) < 0.001:
+        right_length = np.linalg.norm(right)
+
+        if right_length < 0.001:
             right = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         else:
-            right /= np.linalg.norm(right)
+            right /= right_length
+
         up = np.cross(right, forward)
+        up /= np.linalg.norm(up)
 
-        pan_factor = self.distance * 0.1 
-        offset_vector = (right * self.setX * pan_factor) + (up * self.setY * pan_factor)
-        new_target = self.target + offset_vector
-        camera_pos = new_target + offset
+        pan_factor = self.distance * 0.1 * self.sensitivity
+        self.target += (-right * dx + up * dy) * pan_factor
 
-        return look_at(camera_pos, new_target, world_up)
+    def zoom(self, amount):
+        self.distance *= 0.9 ** amount
+        self.distance = float(
+            np.clip(self.distance, self.MIN_DIST, self.MAX_DIST)
+        )
 
+    def view_matrix(self):
+        camera_pos = self.target + self._offset()
+        world_up = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+
+        return look_at(camera_pos, self.target, world_up)
+    
 # ---------------------------------------------------------------------------
 # Меш: геометрия, загруженная в видеопамять (создаётся один раз на форму)
 # ---------------------------------------------------------------------------
@@ -162,6 +171,44 @@ class BatchedLines:
 # ---------------------------------------------------------------------------
 FLOATS_PER_VERTEX = 7
 
+def remove_coincident_faces_global(vertices, indices, decimals=5, color_decimals=3):
+    if len(indices) == 0:
+        return vertices, indices
+
+    if len(indices) % 3 != 0:
+        raise ValueError("Ожидается GL_TRIANGLES: число индексов должно быть кратно 3")
+
+    pos = vertices[:, :3].astype(np.float32)
+    rgba = vertices[:, 3:7].astype(np.float32)
+
+    faces = indices.reshape(-1, 3)
+    face_pos = pos[faces]
+    face_rgba = rgba[faces]
+
+    face_pos = np.sort(face_pos, axis=1)
+    face_rgba = np.sort(face_rgba, axis=1)
+
+    pos_key = np.round(face_pos, decimals=decimals)
+    rgba_key = np.round(face_rgba, decimals=color_decimals)
+
+    mask = face_rgba[:, :, 3] == 1
+    rgba_key[mask, :3] = 0  
+    
+    face_keys = np.concatenate([pos_key, rgba_key], axis=2)
+    face_keys = face_keys.reshape(len(faces), -1)
+
+    _, inverse, counts = np.unique(
+        face_keys,
+        axis=0,
+        return_inverse=True,
+        return_counts=True
+    )
+
+    keep = counts[inverse] == 1
+    new_indices = faces[keep].reshape(-1).astype(np.uint32)
+
+    return vertices, new_indices
+
 class Batch:
     def __init__(self, objects, mode, lit):
         self.mode = mode
@@ -179,18 +226,19 @@ class Batch:
             xyz1 = np.hstack([v[:, :3], np.ones((len(v), 1), dtype=np.float32)])
             v[:, :3] = (xyz1 @ model.T)[:, :3]
  
-            # Цвет объекта запекаем в вершины
             if getattr(obj, "new_color", None):
                 v[:, 3:7] = obj.new_color
- 
+
             all_vertices.append(v)
             all_indices.append(i + offset)
             offset += len(v)
- 
+
         vertices = np.concatenate(all_vertices, axis=0)
         indices = np.concatenate(all_indices, axis=0).astype(np.uint32)
+
+        if self.mode == GL_TRIANGLES: vertices, indices = remove_coincident_faces_global(vertices, indices)
         self.index_count = len(indices)
- 
+
         self.vao = glGenVertexArrays(1)
         glBindVertexArray(self.vao)
  
